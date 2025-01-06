@@ -1,6 +1,6 @@
 import streamlit as st
 import requests
-import json
+from bs4 import BeautifulSoup
 import networkx as nx
 import matplotlib.pyplot as plt
 import time
@@ -8,75 +8,68 @@ import time
 # Streamlit app title
 st.title("Live Bitcoin Transaction Visualization")
 
-# Session state variables for toggle and data
-if "visualization_running" not in st.session_state:
-    st.session_state.visualization_running = False
-
-# Function to start/stop visualization
-def start_stop_visualization():
-    st.session_state.visualization_running = not st.session_state.visualization_running
-
-# Button for starting/stopping visualization
-st.button("START VISUALIZATION", on_click=start_stop_visualization)
-
-# Placeholder for metrics and graph
-placeholder_metrics = st.empty()
-placeholder_graph = st.empty()
-
-# Function to fetch live data from the website's API
+# Function to scrape live data from DailyBlockchain
 def fetch_bitcoin_data():
-    # Example of scraping (replace URL with actual API or endpoint if available)
     url = "https://dailyblockchain.github.io/"
     response = requests.get(url)
+    soup = BeautifulSoup(response.text, "html.parser")
 
-    # If there is a backend API, modify this part
-    # Assuming the response contains JSON-like data
-    # Replace below simulation with actual data extraction logic
-    data = {
-        "input_transactions": 200,  # Replace this with actual data
-        "output_transactions": 180,  # Replace this with actual data
-        "total_transactions": 380,  # Replace this with actual data
-        "graph_data": [
-            ("Wallet1", "Wallet2"),
-            ("Wallet2", "Wallet3"),
-            ("Wallet3", "Wallet4"),
-        ]  # Simulated graph data
+    # Extracting the live numbers (inputs, outputs, and transactions)
+    live_data = soup.find_all("div", class_="stat-number")
+    input_transactions = int(live_data[0].text.strip())
+    output_transactions = int(live_data[1].text.strip())
+    total_transactions = int(live_data[2].text.strip())
+
+    # Extracting graph data (for visualization)
+    graph_data = []
+    nodes = soup.find_all("circle")
+    links = soup.find_all("line")
+
+    for node in nodes:
+        graph_data.append(node["id"])  # Replace with actual attributes if available
+
+    edges = [(link["source"], link["target"]) for link in links]  # Adjust attributes if needed
+
+    return {
+        "input_transactions": input_transactions,
+        "output_transactions": output_transactions,
+        "total_transactions": total_transactions,
+        "graph_data": edges,
     }
-
-    return data
 
 # Function to draw the graph
 def draw_graph(graph_data):
-    G = nx.DiGraph()  # Directed graph
+    G = nx.DiGraph()
     G.add_edges_from(graph_data)
 
-    # Drawing the graph
+    # Draw the graph with custom styling
     pos = nx.spring_layout(G)
     plt.figure(figsize=(10, 6))
-    nx.draw(G, pos, with_labels=True, node_size=700, node_color="lightblue", font_size=10, font_weight="bold", arrowsize=20)
+    nx.draw(G, pos, with_labels=True, node_size=500, node_color="skyblue", font_size=10, arrowsize=15)
     st.pyplot(plt)
 
-# Run visualization if the toggle is active
-if st.session_state.visualization_running:
-    st.write("Visualization Running... (Press the button again to stop)")
-    while st.session_state.visualization_running:
+# Real-time display of metrics and graph
+st.write("Visualization Running...")
+
+while True:
+    try:
         # Fetch live data
         data = fetch_bitcoin_data()
 
-        # Display metrics
-        with placeholder_metrics.container():
-            st.subheader("Real-Time Bitcoin Transactions")
-            st.metric("Input Transactions", data["input_transactions"])
-            st.metric("Output Transactions", data["output_transactions"])
-            st.metric("Total Transactions", data["total_transactions"])
+        # Display live metrics
+        st.subheader("Live Bitcoin Transactions")
+        st.metric("Input Transactions", data["input_transactions"])
+        st.metric("Output Transactions", data["output_transactions"])
+        st.metric("Total Transactions", data["total_transactions"])
 
-        # Display live graph
-        with placeholder_graph.container():
-            st.subheader("Live Bitcoin Transaction Graph")
-            draw_graph(data["graph_data"])
+        # Display graph visualization
+        st.subheader("Live Bitcoin Transaction Graph")
+        draw_graph(data["graph_data"])
 
         # Real-time update interval
         time.sleep(2)
-else:
-    st.write("Visualization Stopped! Press the button to start.")
+
+    except Exception as e:
+        st.error(f"Error fetching data: {e}")
+
 
