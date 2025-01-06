@@ -1,75 +1,85 @@
 import streamlit as st
-import requests
-from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
 import networkx as nx
 import matplotlib.pyplot as plt
 import time
 
-# Streamlit app title
-st.title("Live Bitcoin Transaction Visualization")
+# Selenium WebDriver Setup
+def get_driver():
+    service = Service("/path/to/chromedriver")  # Update path to ChromeDriver
+    options = webdriver.ChromeOptions()
+    options.add_argument("--headless")  # Run browser in headless mode
+    driver = webdriver.Chrome(service=service, options=options)
+    return driver
 
-# Function to scrape live data from DailyBlockchain
-def fetch_bitcoin_data():
+# Scrape data from DailyBlockchain
+def fetch_live_data(driver):
     url = "https://dailyblockchain.github.io/"
-    response = requests.get(url)
-    soup = BeautifulSoup(response.text, "html.parser")
+    driver.get(url)
+    time.sleep(2)  # Allow time for the page to load
 
-    # Extracting the live numbers (inputs, outputs, and transactions)
-    live_data = soup.find_all("div", class_="stat-number")
-    input_transactions = int(live_data[0].text.strip())
-    output_transactions = int(live_data[1].text.strip())
-    total_transactions = int(live_data[2].text.strip())
+    # Scrape input, output, and transactions
+    inputs = driver.find_element(By.XPATH, "(//div[@class='stat-number'])[1]").text
+    outputs = driver.find_element(By.XPATH, "(//div[@class='stat-number'])[2]").text
+    transactions = driver.find_element(By.XPATH, "(//div[@class='stat-number'])[3]").text
 
-    # Extracting graph data (for visualization)
-    graph_data = []
-    nodes = soup.find_all("circle")
-    links = soup.find_all("line")
+    # Scrape graph data (nodes and edges)
+    nodes = driver.find_elements(By.TAG_NAME, "circle")
+    edges = driver.find_elements(By.TAG_NAME, "line")
 
-    for node in nodes:
-        graph_data.append(node["id"])  # Replace with actual attributes if available
-
-    edges = [(link["source"], link["target"]) for link in links]  # Adjust attributes if needed
-
-    return {
-        "input_transactions": input_transactions,
-        "output_transactions": output_transactions,
-        "total_transactions": total_transactions,
-        "graph_data": edges,
+    graph_data = {
+        "inputs": int(inputs.replace(",", "")),
+        "outputs": int(outputs.replace(",", "")),
+        "transactions": int(transactions.replace(",", "")),
+        "nodes": len(nodes),
+        "edges": len(edges),
     }
+    return graph_data
 
-# Function to draw the graph
+# Visualize the graph
 def draw_graph(graph_data):
     G = nx.DiGraph()
-    G.add_edges_from(graph_data)
+    # Create random edges for now (adjust if scraping actual data)
+    for i in range(graph_data["nodes"]):
+        G.add_node(i)
+    for i in range(graph_data["edges"]):
+        G.add_edge(i % graph_data["nodes"], (i + 1) % graph_data["nodes"])
 
-    # Draw the graph with custom styling
+    # Plot graph
     pos = nx.spring_layout(G)
     plt.figure(figsize=(10, 6))
     nx.draw(G, pos, with_labels=True, node_size=500, node_color="skyblue", font_size=10, arrowsize=15)
     st.pyplot(plt)
 
-# Real-time display of metrics and graph
-st.write("Visualization Running...")
+# Streamlit App
+st.title("DailyBlockchain Live Bitcoin Visualization")
 
+# WebDriver Initialization
+driver = get_driver()
+
+# Live Update Loop
 while True:
     try:
         # Fetch live data
-        data = fetch_bitcoin_data()
+        live_data = fetch_live_data(driver)
 
         # Display live metrics
-        st.subheader("Live Bitcoin Transactions")
-        st.metric("Input Transactions", data["input_transactions"])
-        st.metric("Output Transactions", data["output_transactions"])
-        st.metric("Total Transactions", data["total_transactions"])
+        st.subheader("Live Bitcoin Metrics")
+        st.metric("Input Transactions", live_data["inputs"])
+        st.metric("Output Transactions", live_data["outputs"])
+        st.metric("Total Transactions", live_data["transactions"])
 
         # Display graph visualization
         st.subheader("Live Bitcoin Transaction Graph")
-        draw_graph(data["graph_data"])
+        draw_graph(live_data)
 
-        # Real-time update interval
+        # Wait before refreshing
         time.sleep(2)
-
     except Exception as e:
-        st.error(f"Error fetching data: {e}")
+        st.error(f"Error: {e}")
+        break
+
 
 
